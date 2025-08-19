@@ -1,0 +1,71 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  name      String?
+  createdAt DateTime   @default(now())
+  sessions  WaSession[]
+}
+
+model WaSession {
+  id          String   @id @default(cuid())
+  label       String?
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  waJid       String?
+  status      String   @default("idle") // idle|qr|connecting|connected|disconnected|error
+  authPath    String?  // deprecated: was used for filesystem auth, now using DB-backed auth
+  lastEventAt DateTime @default(now())
+  error       String?
+  logs        WaLog[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // relations
+  authCreds   WaAuthCreds?
+  authKeys    WaAuthKey[]
+}
+
+model WaLog {
+  id         String   @id @default(cuid())
+  sessionId  String
+  session    WaSession @relation(fields: [sessionId], references: [id])
+  level      String   @default("info")
+  message    String
+  createdAt  DateTime @default(now())
+}
+
+// Baileys auth stored in DB
+model WaAuthCreds {
+  // one row per session
+  sessionId String    @id
+  session   WaSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  data      String    // JSON stringified with BufferJSON.replacer
+  updatedAt DateTime  @updatedAt
+}
+
+model WaAuthKey {
+  id        String    @id @default(cuid())
+  sessionId String
+  session   WaSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type      String
+  keyId     String
+  value     String    // JSON stringified with BufferJSON.replacer
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([sessionId, type, keyId], name: "wa_authkey_unique")
+  @@index([sessionId, type], name: "wa_authkey_session_type_idx")
+}
