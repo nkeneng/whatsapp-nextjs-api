@@ -3,6 +3,8 @@ import EventEmitter from "node:events"
 import { useDbAuthState } from "@/lib/wa/dbAuth"
 import { prisma } from "@/lib/db"
 
+const DEFAULT_DEVICE_LABEL = process.env.WA_DEVICE_LABEL || "Steven Api"
+
 export type SessionEvents = {
   qr: (sessionId: string, qr: string) => void
   status: (sessionId: string, status: string, details?: any) => void
@@ -20,10 +22,27 @@ export class SessionBus extends EventEmitter {
   }
 }
 
-const sockets = new Map<string, WASocket>()
-const lastStatus = new Map<string, string>()
-const lastQR = new Map<string, string>()
-export const bus = new SessionBus()
+// Ensure single shared instances across Next.js route modules
+const globalWA = globalThis as unknown as {
+  __wa?: {
+    sockets: Map<string, WASocket>
+    lastStatus: Map<string, string>
+    lastQR: Map<string, string>
+    bus: SessionBus
+  }
+}
+if (!globalWA.__wa) {
+  globalWA.__wa = {
+    sockets: new Map<string, WASocket>(),
+    lastStatus: new Map<string, string>(),
+    lastQR: new Map<string, string>(),
+    bus: new SessionBus(),
+  }
+}
+const sockets = globalWA.__wa.sockets
+const lastStatus = globalWA.__wa.lastStatus
+const lastQR = globalWA.__wa.lastQR
+export const bus = globalWA.__wa.bus
 
 function emitLog(sessionId: string, level: "info"|"warn"|"error", message: string) {
   bus.emit("log", sessionId, level, message)
@@ -62,16 +81,18 @@ async function waitUntilConnected(sessionId: string, timeoutMs = 15000): Promise
 }
 
 async function createSocket(sessionId: string) {
-  // init session row if not exists
-  await prisma.waSession.upsert({
+  // init session row if not exists (store default label on create)
+  const sessionRow = await prisma.waSession.upsert({
     where: { id: sessionId },
     update: { updatedAt: new Date() },
-    create: { id: sessionId, status: "starting" },
+    create: { id: sessionId, status: "starting", label: DEFAULT_DEVICE_LABEL },
   })
 
   const { state, saveCreds } = await useDbAuthState(sessionId)
   const { version } = await fetchLatestBaileysVersion()
-  const sock = makeWASocket({ version, auth: state, printQRInTerminal: false })
+  const deviceLabel = sessionRow.label ?? DEFAULT_DEVICE_LABEL
+  // Use a Chrome-like tuple for better compatibility with WA device list
+  const sock = makeWASocket({ version, auth: state, printQRInTerminal: false, browser: [deviceLabel, "Chrome", "120.0.0"] })
 
   emitLog(sessionId, "info", `socket created for ${sessionId}`)
 
@@ -81,12 +102,17 @@ async function createSocket(sessionId: string) {
   sock.ev.on("connection.update", async (u: any) => {
     if (u.qr) {
       lastQR.set(sessionId, u.qr)
+      // reflect QR state in status map and notify listeners
+      lastStatus.set(sessionId, "qr")
       bus.emit("qr", sessionId, u.qr)
+      bus.emit("status", sessionId, "qr")
       emitLog(sessionId, "info", "QR received")
       await prisma.waSession.update({ where: { id: sessionId }, data: { status: "qr", lastEventAt: new Date() } })
     }
     if (u.connection === "open") {
       lastStatus.set(sessionId, "connected")
+      // Clear any stale QR once connected
+      lastQR.delete(sessionId)
       bus.emit("status", sessionId, "connected")
       emitLog(sessionId, "info", "connected")
       await prisma.waSession.update({ where: { id: sessionId }, data: { status: "connected", lastEventAt: new Date() } })
@@ -132,6 +158,8 @@ export function stopSocket(sessionId: string) {
     try { s.end(undefined) } catch {}
     sockets.delete(sessionId)
     lastStatus.set(sessionId, "stopped")
+    // Clear QR on stop as well so UI won't show stale codes
+    lastQR.delete(sessionId)
     bus.emit("status", sessionId, "stopped")
     emitLog(sessionId, "info", "socket stopped")
   }

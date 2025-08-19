@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
-import { CheckCircle2, AlertOctagon, Circle, Loader2, Trash2, RefreshCw, Link as LinkIcon, QrCode } from "lucide-react"
+import { CheckCircle2, AlertOctagon, Circle, Loader2, Trash2, RefreshCw, QrCode } from "lucide-react"
 
 // Tiny QR renderer using canvas to avoid external services
 function renderQRToDataUrl(text: string, size = 240): string {
@@ -41,30 +41,30 @@ export default function DashboardPage() {
   const [logs, setLogs] = useState<string[]>([])
   const [sessions, setSessions] = useState<{ id: string; status: string; connected: boolean; hasQR: boolean }[]>([])
   const evtRef = useRef<EventSource | null>(null)
+  const isConnectedRef = useRef(false)
 
+  // Unified action: start session and if not connected, fetch QR
   const start = async () => {
     if (!sessionId) return alert("Enter sessionId")
     setLogs((l) => [...l, `starting session ${sessionId}...`])
     setStatus("starting"); setQr(null)
-    // subscribe first so we don't miss early QR
-    subscribe(sessionId)
-    await fetch("/api/session/start", { method: "POST", body: JSON.stringify({ sessionId }) })
-    refreshSessions()
-  }
+    isConnectedRef.current = false
 
-  const pair = async () => {
-    if (!sessionId) return alert("Enter sessionId")
-    setStatus("starting")
-    setQr(null)
-    const res = await fetch("/api/session/pair", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId, timeoutMs: 25000 }) })
+    // Use pair endpoint which ensures socket is started and returns QR/connected
+    const res = await fetch("/api/session/pair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, timeoutMs: 25000 }),
+    })
     const data = await res.json()
     if (!data.success) {
-      setLogs((l) => [...l, `pair failed: ${data.message || "unknown"}`])
+      setLogs((l) => [...l, `connect failed: ${data.message || "unknown"}`])
       return
     }
     if (data.status === "connected") {
       setStatus("connected"); setQr(null)
-      setLogs((l) => [...l, `paired ${sessionId}`])
+      isConnectedRef.current = true
+      setLogs((l) => [...l, `session ${sessionId} connected`])
       refreshSessions()
       return
     }
@@ -72,7 +72,7 @@ export default function DashboardPage() {
       setStatus("qr")
       setQr(data.qr as string)
       setLogs((l) => [...l, "QR ready — scan it from WhatsApp -> Linked devices"])
-      // also start SSE to keep updates flowing
+      // start SSE to keep updates flowing while pairing
       subscribe(sessionId)
     }
   }
@@ -86,11 +86,15 @@ export default function DashboardPage() {
     es.onmessage = (ev) => {
       try {
         const payload = JSON.parse(ev.data)
-        if (payload.type === "qr") setQr(payload.data)
+        if (payload.type === "qr") {
+          // Ignore QR updates once connected
+          if (!isConnectedRef.current) setQr(payload.data)
+        }
         if (payload.type === "status") {
           const s = payload.data.status as string
           setStatus(s)
-          // only clear QR on terminal statuses to prevent hiding it during start/reconnect
+          isConnectedRef.current = s === "connected"
+          // Clear QR immediately on connected/disconnected/stopped
           if (s === "connected" || s === "disconnected" || s === "stopped") setQr(null)
         }
         if (payload.type === "log") setLogs((l) => [...l.slice(-200), payload.data.message])
@@ -164,8 +168,7 @@ export default function DashboardPage() {
       <Card className="p-4 space-y-2">
         <div className="flex gap-2">
           <Input placeholder="session id (e.g. your-email)" value={sessionId} onChange={(e) => setSessionId(e.target.value)} />
-          <Button onClick={pair}><LinkIcon className="h-4 w-4 mr-1" /> Pair</Button>
-          <Button onClick={start} variant="outline"><QrCode className="h-4 w-4 mr-1" /> Start</Button>
+          <Button onClick={start}><QrCode className="h-4 w-4 mr-1" /> Start / Pair</Button>
           <Button variant="outline" onClick={() => subscribe()}>Subscribe</Button>
           <Button variant="destructive" onClick={logout}><Trash2 className="h-4 w-4 mr-1" /> Delete</Button>
           <Button variant="outline" onClick={refreshSessions}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
@@ -180,7 +183,7 @@ export default function DashboardPage() {
               <img src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qr)}`} alt="qr" className="border" />
             )}
             <div className="mt-2 flex gap-2">
-              <Button size="sm" variant="outline" onClick={pair}>Get new QR</Button>
+              <Button size="sm" variant="outline" onClick={start}>Get new QR</Button>
             </div>
           </div>
         )}
