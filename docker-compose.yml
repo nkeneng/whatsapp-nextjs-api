@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: whatsapp-api:latest
+    container_name: whatsapp-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "file:/data/dev.db"
+      NODE_ENV: production
+      # Optional tuning
+      PRISMA_LOG_QUERY: "0"
+      WA_DEVICE_LABEL: "Steven Api"
+      # Force ws to use pure-JS implementations to avoid native module issues in bundled output
+      WS_NO_BUFFER_UTIL: "1"
+      WS_NO_UTF_8_VALIDATE: "1"
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

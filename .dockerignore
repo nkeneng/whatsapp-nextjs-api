@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+.git
+.gitignore
+.DS_Store
+.env
+.env.*
+**/*.log
+**/dev.db
+**/*.sqlite
+**/*.sqlite-journal
