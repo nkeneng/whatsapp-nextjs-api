@@ -2,10 +2,7 @@ version: "3.9"
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: whatsapp-api:latest
+    image: ghcr.io/nkeneng/whatsapp-nextjs-api:${IMAGE_TAG}
     container_name: whatsapp-api
     restart: unless-stopped
     environment:
@@ -18,7 +15,7 @@ services:
       WS_NO_BUFFER_UTIL: "1"
       WS_NO_UTF_8_VALIDATE: "1"
     volumes:
-      - ./data:/data
+      - ${DATA_VOLUME}:/data
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:3000/ || exit 1"]
       interval: 10s
