@@ -60,7 +60,7 @@ jobs:
     - name: Update Dokploy project environment
       run: |
         curl -X POST \
-          '${{ vars.DOKPLOY_URL }}/api/project.update' \
+          'https://${{secrets.HTACCESS}}@${{ vars.DOKPLOY_URL }}/api/project.update' \
           -H 'x-api-key: ${{ secrets.DOKPLOY_API_KEY }}' \
           -H 'Content-Type: application/json' \
           -d '{
@@ -72,7 +72,7 @@ jobs:
     - name: Trigger Dokploy Deployment
       run: |
         curl -X POST \
-          '${{ vars.DOKPLOY_URL }}/api/compose.deploy' \
+          'https://${{secrets.HTACCESS}}@${{ vars.DOKPLOY_URL }}/api/compose.deploy' \
           -H 'accept: application/json' \
           -H 'x-api-key: ${{ secrets.DOKPLOY_API_KEY }}' \
           -H 'Content-Type: application/json' \
