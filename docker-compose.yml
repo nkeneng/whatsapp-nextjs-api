@@ -1,21 +1,33 @@
 version: "3.9"
 
 services:
+  db-init:
+    image: ghcr.io/nkeneng/whatsapp-nextjs-api:${IMAGE_TAG}
+    container_name: whatsapp-api-db-init
+    restart: "no"
+    environment:
+      DATABASE_URL: "file:/data/dev.db"
+    volumes:
+      - ${DATA_VOLUME:-./data}:/data
+    # Reuse image entrypoint to run prisma generate + migrate deploy, then exit
+    command: ["/entrypoint.sh", "true"]
+
   app:
     image: ghcr.io/nkeneng/whatsapp-nextjs-api:${IMAGE_TAG}
     container_name: whatsapp-api
     restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: "file:/data/dev.db"
       NODE_ENV: production
-      # Optional tuning
       PRISMA_LOG_QUERY: "0"
       WA_DEVICE_LABEL: "Steven Api"
-      # Force ws to use pure-JS implementations to avoid native module issues in bundled output
       WS_NO_BUFFER_UTIL: "1"
       WS_NO_UTF_8_VALIDATE: "1"
     volumes:
-      - ${DATA_VOLUME}:/data
+      - ${DATA_VOLUME:-./data}:/data
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:3000/ || exit 1"]
       interval: 10s
