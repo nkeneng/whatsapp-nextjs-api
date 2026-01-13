@@ -1,4 +1,4 @@
-import makeWASocket, { fetchLatestBaileysVersion, WASocket } from "@whiskeysockets/baileys"
+import makeWASocket, { fetchLatestBaileysVersion, type GroupMetadata, WASocket } from "@whiskeysockets/baileys"
 import EventEmitter from "node:events"
 import { useDbAuthState } from "@/lib/wa/dbAuth"
 import { prisma } from "@/lib/db"
@@ -78,6 +78,21 @@ async function waitUntilConnected(sessionId: string, timeoutMs = 15000): Promise
     bus.on("status", onStatus)
     bus.on("qr", onQR)
   })
+}
+
+async function getConnectedSocket(sessionId: string, timeoutMs = 20000) {
+  const sock = await getOrStartSocket(sessionId)
+
+  const waitResult = await waitUntilConnected(sessionId, timeoutMs)
+  if (waitResult !== "connected") {
+    const msg = waitResult === "needs_qr" ? "Session not paired yet. Scan QR first." : "Session not connected within timeout."
+    const err = new Error(msg) as Error & { code?: string; status?: string }
+    err.code = waitResult === "needs_qr" ? "PAIRING_REQUIRED" : "TIMEOUT"
+    err.status = waitResult
+    throw err
+  }
+
+  return sock
 }
 
 async function createSocket(sessionId: string) {
@@ -166,20 +181,28 @@ export function stopSocket(sessionId: string) {
 }
 
 export async function sendText(sessionId: string, recipient: string, text: string, opts?: { waitMs?: number }) {
-  const sock = await getOrStartSocket(sessionId)
-
-  const waitResult = await waitUntilConnected(sessionId, opts?.waitMs ?? 20000)
-  if (waitResult !== "connected") {
-    const msg = waitResult === "needs_qr" ? "Session not paired yet. Scan QR first." : "Session not connected within timeout."
-    const err = new Error(msg) as Error & { code?: string; status?: string }
-    err.code = waitResult === "needs_qr" ? "PAIRING_REQUIRED" : "TIMEOUT"
-    err.status = waitResult
-    throw err
-  }
+  const sock = await getConnectedSocket(sessionId, opts?.waitMs ?? 20000)
 
   const jid = recipient.includes("@") ? recipient : `${recipient}@s.whatsapp.net`
   await sock.sendMessage(jid, { text })
   emitLog(sessionId, "info", `sent text to ${jid}`)
+}
+
+export async function listGroups(sessionId: string, opts?: { waitMs?: number }) {
+  const sock = await getConnectedSocket(sessionId, opts?.waitMs ?? 20000)
+
+  // Returns a map of jid -> GroupMetadata
+  const groups: Record<string, GroupMetadata> = await sock.groupFetchAllParticipating()
+
+  return Object.values(groups)
+    .map((g) => ({
+      id: g.id,
+      subject: g.subject,
+      size: g.participants?.length,
+      announce: !!g.announce,
+      restrict: !!g.restrict,
+    }))
+    .sort((a, b) => (a.subject || "").localeCompare(b.subject || ""))
 }
 
 // New: list sessions from DB with in-memory overrides
