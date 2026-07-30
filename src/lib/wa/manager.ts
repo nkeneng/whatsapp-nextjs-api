@@ -1,4 +1,5 @@
 import makeWASocket, { fetchLatestBaileysVersion, type GroupMetadata, WASocket } from "@whiskeysockets/baileys"
+import { forwardInbound } from "@/lib/wa/inbound"
 import EventEmitter from "node:events"
 import { useDbAuthState } from "@/lib/wa/dbAuth"
 import { prisma } from "@/lib/db"
@@ -113,6 +114,13 @@ async function createSocket(sessionId: string) {
 
   sock.ev.on("creds.update", async () => {
     await saveCreds()
+  })
+  sock.ev.on("messages.upsert", ({ messages, type }) => {
+    // "notify" = fresh incoming messages (not history sync / offline replay)
+    if (type !== "notify") return
+    for (const m of messages) {
+      forwardInbound(sessionId, m, (level, message) => emitLog(sessionId, level, message))
+    }
   })
   sock.ev.on("connection.update", async (u: any) => {
     if (u.qr) {
