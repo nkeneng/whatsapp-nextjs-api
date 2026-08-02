@@ -12,8 +12,8 @@ export async function syncMessageToPlatform(
     timestamp?: number
   }
 ) {
-  const webhookUrl = process.env.ADMIN_ZONE_WEBHOOK_URL
-  const webhookKey = process.env.ADMIN_ZONE_WEBHOOK_KEY
+  const webhookUrl = process.env.OUTBOUND_WEBHOOK_URL
+  const webhookKey = process.env.OUTBOUND_WEBHOOK_KEY
 
   // Skip if webhook not configured
   if (!webhookUrl || !webhookKey) {
