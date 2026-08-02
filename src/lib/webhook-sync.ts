@@ -1,5 +1,5 @@
 /**
- * Synchronisation des messages WhatsApp vers Admin Zone Travel
+ * Synchronisation des messages WhatsApp
  * Enregistre chaque message sortant dans l'historique de la plateforme
  */
 

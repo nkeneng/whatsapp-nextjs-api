@@ -188,7 +188,6 @@ export async function sendText(sessionId: string, recipient: string, text: strin
   await sock.sendMessage(jid, { text })
   emitLog(sessionId, "info", `sent text to ${jid}`)
 
-  // Synchroniser le message sortant vers Admin Zone Travel
   await syncMessageToPlatform(recipient, text, {
     status: 'sent',
   }).catch((error) => {
