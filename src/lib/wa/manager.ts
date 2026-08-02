@@ -2,6 +2,8 @@ import makeWASocket, { fetchLatestBaileysVersion, type GroupMetadata, WASocket }
 import EventEmitter from "node:events"
 import { useDbAuthState } from "@/lib/wa/dbAuth"
 import { prisma } from "@/lib/db"
+import { syncMessageToPlatform } from "@/lib/webhook-sync"
+import { forwardInboundMessage } from "@/lib/webhook-inbound"
 
 const DEFAULT_DEVICE_LABEL = process.env.WA_DEVICE_LABEL || "Steven Api"
 
@@ -140,6 +142,28 @@ async function createSocket(sessionId: string) {
       emitLog(sessionId, "warn", `disconnected (code=${code ?? "?"}). ${loggedOut ? "logged out" : "will reconnect"}`)
       await prisma.waSession.update({ where: { id: sessionId }, data: { status: loggedOut ? "disconnected" : "reconnecting", lastEventAt: new Date(), error: loggedOut ? "logged out" : null } })
 
+  // Forward inbound messages to external webhook
+  sock.ev.on("messages.upsert", async (m: any) => {
+    try {
+      for (const msg of m.messages) {
+        // Only process incoming messages (not sent)
+        if (msg.key.fromMe) continue
+        const from = msg.key.remoteJid?.replace("@s.whatsapp.net", "").replace("@g.us", "") || ""
+        const body = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ""
+        if (from && body) {
+          await forwardInboundMessage(from, body, {
+            messageId: msg.key.id,
+            timestamp: msg.messageTimestamp ? (msg.messageTimestamp as number) : undefined,
+          }).catch((e) => {
+            emitLog(sessionId, "warn", `Failed to forward inbound message: ${e}`)
+          })
+        }
+      }
+    } catch (error) {
+      emitLog(sessionId, "error", `Error processing inbound messages: ${error}`)
+    }
+  })
+
       if (!loggedOut) {
         setTimeout(async () => {
           try { sock.end(undefined) } catch {}
@@ -186,6 +210,13 @@ export async function sendText(sessionId: string, recipient: string, text: strin
   const jid = recipient.includes("@") ? recipient : `${recipient}@s.whatsapp.net`
   await sock.sendMessage(jid, { text })
   emitLog(sessionId, "info", `sent text to ${jid}`)
+
+  // Synchronize outbound message to external webhook
+  await syncMessageToPlatform(recipient, text, {
+    status: 'sent',
+  }).catch((error) => {
+    emitLog(sessionId, "warn", `Failed to sync message to platform: ${error}`)
+  })
 }
 
 export async function listGroups(sessionId: string, opts?: { waitMs?: number }) {
