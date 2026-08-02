@@ -1,14 +1,28 @@
 version: "3.9"
 
 services:
+  db-init:
+    image: ghcr.io/nkeneng/whatsapp-nextjs-api:${IMAGE_TAG}
+    container_name: whatsapp-api-db-init
+    restart: "no"
+    user: "0:0"
+    environment:
+      DATABASE_URL: "file:/data/dev.db"
+    volumes:
+      - ${DATA_VOLUME:-./data}:/data
+    # Ensure /data exists and is writable by node (uid 1000), run migrations, then fix ownership
+    command: ["/bin/sh", "-lc", "mkdir -p /data && chown -R 1000:1000 /data && /entrypoint.sh true && chown -R 1000:1000 /data"]
+
   app:
     image: ghcr.io/nkeneng/whatsapp-nextjs-api:${IMAGE_TAG}
     container_name: whatsapp-api
     restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: "file:/data/dev.db"
       NODE_ENV: production
-      # Optional tuning
       PRISMA_LOG_QUERY: "0"
       WA_DEVICE_LABEL: "Steven Api"
       # Forward incoming messages to the Zone Travel admin (empty key = disabled)
@@ -19,7 +33,7 @@ services:
       WS_NO_BUFFER_UTIL: "1"
       WS_NO_UTF_8_VALIDATE: "1"
     volumes:
-      - ${DATA_VOLUME}:/data
+      - ${DATA_VOLUME:-./data}:/data
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:3000/ || exit 1"]
       interval: 10s
