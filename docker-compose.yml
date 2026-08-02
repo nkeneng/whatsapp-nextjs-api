@@ -25,6 +25,11 @@ services:
       NODE_ENV: production
       PRISMA_LOG_QUERY: "0"
       WA_DEVICE_LABEL: "Steven Api"
+      # Forward incoming messages to the Zone Travel admin (empty key = disabled)
+      INBOUND_WEBHOOK_URL: "${INBOUND_WEBHOOK_URL:-https://admin.zone-travel.net/api/webhooks/whatsapp-inbound}"
+      INBOUND_WEBHOOK_KEY: "${INBOUND_WEBHOOK_KEY:-}"
+      INBOUND_WEBHOOK_SESSIONS: "${INBOUND_WEBHOOK_SESSIONS:-zone}"
+      # Force ws to use pure-JS implementations to avoid native module issues in bundled output
       WS_NO_BUFFER_UTIL: "1"
       WS_NO_UTF_8_VALIDATE: "1"
     volumes:

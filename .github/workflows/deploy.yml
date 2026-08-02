@@ -58,25 +58,18 @@ jobs:
           ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
     - name: Update Dokploy project environment
-      run: |
-        curl -X POST \
-          'https://${{secrets.HTACCESS}}@${{ vars.DOKPLOY_URL }}/api/project.update' \
-          -H 'x-api-key: ${{ secrets.DOKPLOY_API_KEY }}' \
-          -H 'Content-Type: application/json' \
-          -d '{
-            "projectId": "${{ secrets.DOKPLOY_PROJECT_ID }}",
-            "env": "IMAGE_TAG=${{ steps.version.outputs.VERSION }}"
-          }' \
-          --fail --show-error
+      uses: nkeneng/dokploy-update-env-gha@2.0
+      with:
+        dokploy_url: ${{ secrets.DOKPLOY_URL }}
+        api_key: ${{ secrets.DOKPLOY_API_KEY }}
+        resource_type: project
+        resource_id: ${{ secrets.DOKPLOY_PROJECT_ID }}
+        env_name: IMAGE_TAG
+        env_value: ${{ steps.version.outputs.VERSION }}
 
-    - name: Trigger Dokploy Deployment
-      run: |
-        curl -X POST \
-          'https://${{secrets.HTACCESS}}@${{ vars.DOKPLOY_URL }}/api/compose.deploy' \
-          -H 'accept: application/json' \
-          -H 'x-api-key: ${{ secrets.DOKPLOY_API_KEY }}' \
-          -H 'Content-Type: application/json' \
-          -d '{
-            "composeId": "${{ secrets.DOKPLOY_COMPOSE_ID }}"
-          }' \
-          --fail --show-error
+    - name: Deploy to Dokploy
+      uses: ahmedabdou14/dokploy-deploy-gha@1.1.0
+      with:
+        dokploy_url: ${{ secrets.DOKPLOY_URL }}
+        auth_token: ${{ secrets.DOKPLOY_API_KEY }}
+        compose_id: ${{ secrets.DOKPLOY_COMPOSE_ID }}

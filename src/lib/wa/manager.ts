@@ -1,4 +1,5 @@
-import makeWASocket, { fetchLatestBaileysVersion, WASocket } from "@whiskeysockets/baileys"
+import makeWASocket, { fetchLatestBaileysVersion, type GroupMetadata, WASocket } from "@whiskeysockets/baileys"
+import { forwardInbound } from "@/lib/wa/inbound"
 import EventEmitter from "node:events"
 import { useDbAuthState } from "@/lib/wa/dbAuth"
 import { prisma } from "@/lib/db"
@@ -80,6 +81,21 @@ async function waitUntilConnected(sessionId: string, timeoutMs = 15000): Promise
   })
 }
 
+async function getConnectedSocket(sessionId: string, timeoutMs = 20000) {
+  const sock = await getOrStartSocket(sessionId)
+
+  const waitResult = await waitUntilConnected(sessionId, timeoutMs)
+  if (waitResult !== "connected") {
+    const msg = waitResult === "needs_qr" ? "Session not paired yet. Scan QR first." : "Session not connected within timeout."
+    const err = new Error(msg) as Error & { code?: string; status?: string }
+    err.code = waitResult === "needs_qr" ? "PAIRING_REQUIRED" : "TIMEOUT"
+    err.status = waitResult
+    throw err
+  }
+
+  return sock
+}
+
 async function createSocket(sessionId: string) {
   // init session row if not exists (store default label on create)
   const sessionRow = await prisma.waSession.upsert({
@@ -98,6 +114,13 @@ async function createSocket(sessionId: string) {
 
   sock.ev.on("creds.update", async () => {
     await saveCreds()
+  })
+  sock.ev.on("messages.upsert", ({ messages, type }) => {
+    // "notify" = fresh incoming messages (not history sync / offline replay)
+    if (type !== "notify") return
+    for (const m of messages) {
+      forwardInbound(sessionId, m, (level, message) => emitLog(sessionId, level, message))
+    }
   })
   sock.ev.on("connection.update", async (u: any) => {
     if (u.qr) {
@@ -166,20 +189,28 @@ export function stopSocket(sessionId: string) {
 }
 
 export async function sendText(sessionId: string, recipient: string, text: string, opts?: { waitMs?: number }) {
-  const sock = await getOrStartSocket(sessionId)
-
-  const waitResult = await waitUntilConnected(sessionId, opts?.waitMs ?? 20000)
-  if (waitResult !== "connected") {
-    const msg = waitResult === "needs_qr" ? "Session not paired yet. Scan QR first." : "Session not connected within timeout."
-    const err = new Error(msg) as Error & { code?: string; status?: string }
-    err.code = waitResult === "needs_qr" ? "PAIRING_REQUIRED" : "TIMEOUT"
-    err.status = waitResult
-    throw err
-  }
+  const sock = await getConnectedSocket(sessionId, opts?.waitMs ?? 20000)
 
   const jid = recipient.includes("@") ? recipient : `${recipient}@s.whatsapp.net`
   await sock.sendMessage(jid, { text })
   emitLog(sessionId, "info", `sent text to ${jid}`)
+}
+
+export async function listGroups(sessionId: string, opts?: { waitMs?: number }) {
+  const sock = await getConnectedSocket(sessionId, opts?.waitMs ?? 20000)
+
+  // Returns a map of jid -> GroupMetadata
+  const groups: Record<string, GroupMetadata> = await sock.groupFetchAllParticipating()
+
+  return Object.values(groups)
+    .map((g) => ({
+      id: g.id,
+      subject: g.subject,
+      size: g.participants?.length,
+      announce: !!g.announce,
+      restrict: !!g.restrict,
+    }))
+    .sort((a, b) => (a.subject || "").localeCompare(b.subject || ""))
 }
 
 // New: list sessions from DB with in-memory overrides
