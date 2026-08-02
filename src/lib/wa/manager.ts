@@ -3,6 +3,7 @@ import { forwardInbound } from "@/lib/wa/inbound"
 import EventEmitter from "node:events"
 import { useDbAuthState } from "@/lib/wa/dbAuth"
 import { prisma } from "@/lib/db"
+import { syncMessageToPlatform } from "@/lib/webhook-sync"
 
 const DEFAULT_DEVICE_LABEL = process.env.WA_DEVICE_LABEL || "Steven Api"
 
@@ -194,6 +195,12 @@ export async function sendText(sessionId: string, recipient: string, text: strin
   const jid = recipient.includes("@") ? recipient : `${recipient}@s.whatsapp.net`
   await sock.sendMessage(jid, { text })
   emitLog(sessionId, "info", `sent text to ${jid}`)
+
+  await syncMessageToPlatform(recipient, text, {
+    status: 'sent',
+  }).catch((error) => {
+    emitLog(sessionId, "warn", `Failed to sync message to platform: ${error}`)
+  })
 }
 
 export async function listGroups(sessionId: string, opts?: { waitMs?: number }) {
