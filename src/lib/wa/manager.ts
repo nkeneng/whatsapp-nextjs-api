@@ -144,12 +144,17 @@ async function createSocket(sessionId: string) {
 
   // Forward inbound messages to external webhook
   sock.ev.on("messages.upsert", async (m: any) => {
+    emitLog(sessionId, "info", `messages.upsert event received: ${m.messages.length} message(s)`)
     try {
       for (const msg of m.messages) {
         // Only process incoming messages (not sent)
-        if (msg.key.fromMe) continue
+        if (msg.key.fromMe) {
+          emitLog(sessionId, "info", `Skipping outbound message: ${msg.key.id}`)
+          continue
+        }
         const from = msg.key.remoteJid?.replace("@s.whatsapp.net", "").replace("@g.us", "") || ""
         const body = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ""
+        emitLog(sessionId, "info", `Processing inbound: from=${from}, body=${body.substring(0, 50)}...`)
         if (from && body) {
           await forwardInboundMessage(from, body, {
             messageId: msg.key.id,
@@ -157,6 +162,8 @@ async function createSocket(sessionId: string) {
           }).catch((e) => {
             emitLog(sessionId, "warn", `Failed to forward inbound message: ${e}`)
           })
+        } else {
+          emitLog(sessionId, "warn", `Missing from or body: from="${from}", body="${body}"`)
         }
       }
     } catch (error) {
