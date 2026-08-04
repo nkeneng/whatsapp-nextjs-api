@@ -38,14 +38,23 @@ export async function syncMessageToPlatform(
       status: options?.status || 'sent',
     }
 
-    const response = await fetch(`${webhookUrl}/api/webhooks/whatsapp-outbound`, {
+    const fetchOptions: RequestInit = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-API-Key': webhookKey,
       },
       body: JSON.stringify(payload),
-    })
+    }
+
+    // En développement, ignorer les erreurs de certificat SSL/TLS
+    if (process.env.NODE_ENV === 'development') {
+      const https = await import('https')
+      const agent = new https.Agent({ rejectUnauthorized: false })
+      Object.assign(fetchOptions, { agent })
+    }
+
+    const response = await fetch(`${webhookUrl}/api/webhooks/whatsapp-outbound`, fetchOptions)
 
     if (!response.ok) {
       const text = await response.text()

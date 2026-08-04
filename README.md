@@ -172,6 +172,50 @@ Returns an array like:
 ]
 ```
 
+## Webhooks (Integration with external platforms)
+
+This app can synchronize messages with an external platform (e.g., a CRM or admin panel) via webhooks.
+
+### Configuration
+
+Set these environment variables to enable webhooks:
+
+```bash
+OUTBOUND_WEBHOOK_URL=http://your-platform.com
+OUTBOUND_WEBHOOK_KEY=your-api-key
+INBOUND_WEBHOOK_KEY=your-api-key  # Optional, currently unused
+```
+
+### How it works
+
+1. **Outbound messages** (sent via WhatsApp): Automatically forwarded to `{OUTBOUND_WEBHOOK_URL}/api/webhooks/whatsapp-outbound`
+2. **Inbound messages** (received via WhatsApp): Automatically forwarded to `{OUTBOUND_WEBHOOK_URL}/api/webhooks/whatsapp-inbound`
+
+### Message Format
+
+**Outbound (sent messages):**
+```json
+{
+  "to": "+237655006289",
+  "body": "Message text",
+  "timestamp": 1722596430,
+  "messageId": "msg_123456",
+  "status": "sent"
+}
+```
+
+**Inbound (received messages):**
+```json
+{
+  "from": "+237655006289",
+  "body": "Reply text",
+  "timestamp": 1722596450,
+  "id": "msg_789"
+}
+```
+
+Headers: `X-API-Key: {OUTBOUND_WEBHOOK_KEY}`
+
 ## Docker (recommended for production-ish runs)
 
 This repo ships a Dockerfile that builds a Next.js standalone server and runs Prisma migrations on startup via `scripts/entrypoint.sh`.

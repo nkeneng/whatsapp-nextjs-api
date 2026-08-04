@@ -2,7 +2,9 @@ version: "3.9"
 
 services:
   app:
-    image: ghcr.io/nkeneng/whatsapp-nextjs-api:${IMAGE_TAG}
+    image: whatsapp-nextjs-api:local
+    ports:
+      - "3000:3000"
     container_name: whatsapp-api
     restart: unless-stopped
     environment:
@@ -14,6 +16,10 @@ services:
       # Force ws to use pure-JS implementations to avoid native module issues in bundled output
       WS_NO_BUFFER_UTIL: "1"
       WS_NO_UTF_8_VALIDATE: "1"
+      # Webhooks pour la synchronisation avec la plateforme admin
+      OUTBOUND_WEBHOOK_URL: ${OUTBOUND_WEBHOOK_URL:-http://localhost:8000}
+      OUTBOUND_WEBHOOK_KEY: ${OUTBOUND_WEBHOOK_KEY:-f035c3c5f1bc61d9fc7d39aee9e92acb4b318299ae8}
+      INBOUND_WEBHOOK_KEY: ${INBOUND_WEBHOOK_KEY:-f035c3c5f1bc61d9fc7d39aee9e92acb4b318299ae8}
     volumes:
       - ${DATA_VOLUME}:/data
     healthcheck:
